@@ -232,9 +232,12 @@ fun E (CPS.SELECT(i, v, w, e)) env =
     | E (CPS.PRIMOP(p, vl, wl, el)) env =
         evalprim(p,
             map (V env) vl,
-            map (fn e => fn al =>
-                    E e (bindn(env, wl, Al)))
-                el)
+            map (
+                    fn e => fn al =>
+                    E e (bindn(env, wl, al))
+                )
+            el
+        )
     | E (CPS.FIX(fl, e)) env =
         let fun h r1 (f, vl, b) =
                 FUNC(fn al => E b (bindn(g r1, vl, al)))

@@ -58,6 +58,7 @@ pub enum ContinuationExpression {
   Offset(Location, Value, Variable, CExp),
 
   /// `Apply` does not bind variables and thus needs no scope rule.
+  /// The `Value` should be a label or variable representing a function.
   Apply(Value, ValueList),
 
   /**
@@ -77,7 +78,7 @@ pub enum ContinuationExpression {
   */
   Fix(Vec<FunctionDefinition>, CExp),
 
-  /// `Swtich` does not bind variables and thus needs no scope rule.
+  /// `Switch` does not bind variables and thus needs no scope rule.
   Switch(Value, Vec<CExp>),
 
   /// In the expression `PrimitiveOp(p, vl, [w], [e1, e2, ...])` the scope
@@ -86,7 +87,7 @@ pub enum ContinuationExpression {
 }
 
 impl ContinuationExpression {
-  pub fn evaluate(self, environment: Environment) -> DValue{
+  pub fn evaluate(self, environment: Environment) -> Answer{
     match self {
 
       ContinuationExpression::Record(values, variable, continuation_expression) => {
@@ -133,12 +134,13 @@ impl ContinuationExpression {
       ContinuationExpression::Apply(f_value, l_values) => {
         if let DValue::Function(denotable_function) = environment.value_to_denotable_value(f_value){
           let parameters = l_values.iter().map(environment.value_to_denotable_value ).collect();
-          denotable_function(parameters)
+          denotable_function(parameters) // : Answer
         } else {
-          DValue::Exception(Exception::Undefined)
+          Exception::Undefined.as_answer()
         }
       }
 
+      // False positive for "Binding `fl_list` never used."
       ContinuationExpression::Fix(fl_list, e_cexp) => {
 
         /**
@@ -152,40 +154,61 @@ impl ContinuationExpression {
           This function captures `fl_list` indirectly through `g` (defined below).
         */
         fn h(
-             r1_environment: Environment,
+             r1_environment: &Environment,
              function_def: &FunctionDefinition,
-        ) -> DValue {
+        ) -> Continuation {
           let bound_r1_environment = g(r1_environment);
-          let f: RawContinuation =
-            |actual_parameters: &ValueList | -> DValue{
+          let raw_continuation: RawContinuation =
+            |actual_parameters, store | {
               let new_environment =
-                  bound_r1_environment.bindn(&function_def.formal_parameters, actual_parameters);
+                  bound_r1_environment.bindn(&function_def.formal_parameters, &actual_parameters);
               function_def.body.evaluate(new_environment)
             };
-          DValue::Function(DenotableFunction{f})
+          Continuation{f: Rc::new(raw_continuation)}
         }
 
         /// The function `g` takes an environment `r` as an argument and returns `r` augmented
         /// by binding all the function names (map #1 fl) to the function bodies (map (h r) fl).
         /// This function captures `fl_list`.
-        fn g(r: Environment) -> Environment {
+        fn g(r: &Environment) -> Environment {
           let function_names = fl_list.iter().map(| triple | triple.0 ).collect();
-          let function_bodies = fl_list.iter().map(|triple| h(r, triple)).collect::<Vec<DValue>>();
+          let function_bodies = fl_list.iter().map(|triple| h(r, triple))
+              .collect::<ContinuationList>();
           r.bindn(
             function_names,
             function_bodies
           )
         };
 
-        e_cexp.evaluate(g(environment))
+        e_cexp.evaluate(g(&environment))
       }
 
-      ContinuationExpression::Switch(_, _) => {
-
+      ContinuationExpression::Switch(value, el_cexp_list) => {
+        if let DValue::Integer(i) = environment.value_to_denotable_value(value){
+          el_cexp_list[i as usize].evaluate(environment)
+        } else {
+          Exception::IndexOutOfBounds.as_answer()
+        }
       }
 
-      ContinuationExpression::PrimitiveOp(_, _, _, _) => {
-
+      /**
+      To evaluate a primitive operator, it is first necessary to extract all the atomic arguments
+      from the environment (map (V env) vl). Then the cexp arguments are all converted to functions
+      of type dvalue list -> store -> answer. The list of atomic arguments and the list of
+      continuations are handed (along with the operator p) to the evalprim function, which performs
+      the appropriate operation and then selects one of the continuations to hand the result to.
+      */
+      ContinuationExpression::PrimitiveOp(p, vl, wl, el) => {
+        let d_values = vl.iter().map(environment.value_to_denotable_value).collect();
+        let continuations = el.iter().map(| c | {
+          Continuation {
+            f: Rc::new(|parameters, store| {
+              c.evaluate(environment.bindn(&wl, &parameters))
+            })
+          }
+        }
+        ).collect::<Vec<Continuation>>();
+        p.eval(d_values,  continuations)
       }
 
     }
@@ -204,7 +227,7 @@ impl ContinuationExpression {
 /// and a store, call the wrapped `RawContinuation` as `c.f(parameters.clone(), store)`.
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Continuation{
-  pub f: RawContinuation,
+  pub f: Rc<RawContinuation>, // (parameters, store) -> answer
 }
 
 // region impl Fn<DValueList> for Continuation
@@ -250,7 +273,7 @@ the `Continuation` that produced it as well as provide debugging/visualization u
 */
 #[derive(Clone, Eq, PartialEq, Debug, Hash)]
 pub struct Answer {
-  pub(crate) f: RawContinuation,
+  pub(crate) f: Rc<RawContinuation>,
   pub(crate) parameters: Parameters
 }
 

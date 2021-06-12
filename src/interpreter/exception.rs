@@ -19,11 +19,11 @@ const DIVIDE_BY_ZERO_EXCEPTION: DenotableValue = DenotableValue::Integer(0);
 pub enum Exception {
   Overflow,
   DivideByZero,
-  InvalidAccess, // Attempt to access a field of a non-`Record`
-  Undefined,     // Exception for interpreter/host code, not the interpreted program.
+  InvalidAccess,      // Attempt to access a field of a non-`Record`
+  Undefined,          // Exception for interpreter/host code, not the interpreted program.
   // Bind,
   // Match,
-  // Nth,
+  IndexOutOfBounds,   // Called `Nth` in [Appel], an invalid subscript.
 }
 
 impl Exception {
@@ -33,14 +33,15 @@ impl Exception {
 
   pub fn as_answer(&self) -> Answer {
     Answer{
-      f:
+      f: Rc::new(
         | parameters, store | {
           if let [DValue::Exception(e)] = parameters[..] {
             store.raise_exception(e)
           } else{
             unreachable!("Internal error: could not unpack exception.")
           }
-        },
+        }
+      ),
       parameters: vec![self.as_denotable_value()]
     }
   }

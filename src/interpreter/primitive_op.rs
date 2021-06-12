@@ -9,6 +9,7 @@ use super::{
   denotable_value::{DValue, EMPTY},
   exception::Exception,
 };
+use std::rc::Rc;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum PrimitiveOp {
@@ -125,7 +126,7 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Divide,
         [DValue::Integer(_i), DValue::Integer(0)],
-        [c]
+        _
       ) =>  {
         Exception::DivideByZero.as_answer()
       },
@@ -259,10 +260,10 @@ impl PrimitiveOp{
         Answer{
           // We capture the needed parameters instead of packing and unpacking the `Answer`'s
           // parameters member
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
             let i = store.fetch(array_range.start+n);
             c.f(vec![i], store)
-          },
+          }),
           parameters: EMPTY
         }
       }
@@ -278,17 +279,17 @@ impl PrimitiveOp{
         Answer{
           // We capture the needed parameters instead of packing and unpacking the `Answer`'s
           // parameters member.
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
             let i = store.fetch_integer(array_range.start + n);
             c.f(vec![i], store)
-          },
+          }),
           parameters: EMPTY
         }
       }
 
       (
         PrimitiveOp::Subscript,
-        [DValue::Record { values, idx: i }, DValue::Integer(n)],
+        [DValue::Record { values, idx: i }, DValue::Integer(j)],
         [c]
       ) => {
         c(vec![values[i+j]])
@@ -325,11 +326,11 @@ impl PrimitiveOp{
 
         Answer{
           // We capture the needed parameters instead of packing and unpacking.
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
 
             let new_store = store.update(array_range.start as Location + n, value);
             c.f(EMPTY, new_store)
-          },
+          }),
           parameters: EMPTY
         }
       },
@@ -346,12 +347,12 @@ impl PrimitiveOp{
 
         Answer{
           // We capture the needed parameters instead of packing and unpacking.
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
 
             let new_store =
                 store.update_integer(array_range.start as Location + n, value);
             c.f(EMPTY, new_store)
-          },
+          }),
           parameters: EMPTY
         }
       },
@@ -366,10 +367,10 @@ impl PrimitiveOp{
         [c]
       ) => {
         Answer{
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
             let new_store = store.update(array_range.start + n, value);
             c.f(EMPTY, new_store)
-          },
+          }),
           parameters: EMPTY
         }
       },
@@ -384,11 +385,11 @@ impl PrimitiveOp{
         [c]
       ) => {
         Answer{
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
             let new_store =
                 store.update_integer(array_range.start + n as Location, value);
             c.f(EMPTY, new_store)
-          },
+          }),
           parameters: EMPTY
         }
       },
@@ -402,11 +403,11 @@ impl PrimitiveOp{
           Exception::Undefined.as_answer()
         } else {
           Answer{
-            f: move | _, store | {
+            f: Rc::new(move | _, store | {
               let new_store
                   = store.update_integer(array_range.start + i, v);
               c.f(EMPTY, new_store)
-            },
+            }),
             parameters: EMPTY
           }
         }
@@ -414,26 +415,26 @@ impl PrimitiveOp{
 
       (PrimitiveOp::MakeRef, [value], [c]) => {
         Answer{
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
             let last_address = store.next_unused_address;
             let mut new_store =
                 store.update(*last_address, value);
             new_store.next_unused_address = next_location(last_address);
             c.f([DValue::Array(l..l+1)], new_store)
-          },
+          }),
           parameters: EMPTY
         }
       }
 
       (PrimitiveOp::MakeRefUnboxed, [DValue::Integer(value)], [c]) => {
         Answer{
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
             let last_address = store.next_unused_address;
             let mut new_store =
                 store.update_integer(*last_address, value);
             new_store.next_unused_address = next_location(last_address);
             c.f([DValue::Array(l..l+1)], new_store)
-          },
+          }),
           parameters: EMPTY
         }
       },
@@ -456,52 +457,52 @@ impl PrimitiveOp{
 
       (PrimitiveOp::GetHandler, [], [c]) => {
         Answer{
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
             c.f(vec![store.fetch(store.exception_handler)], store)
-          },
+          }),
           parameters: EMPTY
         }
       },
 
       (PrimitiveOp::SetHandler, [new_handler], [c]) => {
         Answer{
-          f: move | _, store | {
+          f: Rc::new(move | _, store | {
             let new_store = store.update(store.exception_handler, new_handler);
             c.f(EMPTY, new_store)
-          },
+          }),
           parameters: EMPTY
         }
       },
 
-      (PrimitiveOp::Boxed, [DValue::Integer(_)], [t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::Integer(_)], [_t, f]) => {
         f(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::Real(_)], [t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::Real(_)], [_t, f]) => {
         f(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::Record { .. }], [t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::Record { .. }], [t, _f]) => {
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::String(_)], [t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::String(_)], [t, _f]) => {
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::Array(_)], [t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::Array(_)], [t, _f]) => {
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::UnboxedArray(_)], [t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::UnboxedArray(_)], [t, _f]) => {
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::ByteArray(_)], [t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::ByteArray(_)], [t, _f]) => {
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::Function(_)], [t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::Function(_)], [t, _f]) => {
         t(EMPTY)
       },
 
@@ -529,14 +530,10 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::FDivide, [DValue::Real(a), DValue::Real(b)], [c]) => {
-
-      },
-
       (
         PrimitiveOp::FDivide,
         [DValue::Real(_a), DValue::Real(0.0)],
-        [c]
+        _
       ) =>  {
         Exception::DivideByZero.as_answer()
       },

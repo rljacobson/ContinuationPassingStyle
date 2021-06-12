@@ -5,15 +5,14 @@ An `Environment` stores the bindings of variables to values.
 */
 
 use std::collections::HashMap;
-
-use super::{
-  denotable_value::DValue,
-  value::Variable,
-  value::{Value, ValueList},
-  VariableList
-};
 use std::ops::Index;
 
+use super::{
+  denotable_value::{DValue, DValueList},
+  value::Variable,
+  value::{Value},
+  VariableList
+};
 
 #[derive(Clone, Debug)]
 pub struct Environment {
@@ -33,7 +32,7 @@ impl Environment {
     new_environment
   }
 
-  pub fn bindn(&self, variables: &VariableList, values: &ValueList) -> Environment {
+  pub fn bindn(&self, variables: &VariableList, values: &DValueList) -> Environment {
     let mut new_environment = self.clone();
     new_environment.extend(variables.iter().zip(values));
     new_environment

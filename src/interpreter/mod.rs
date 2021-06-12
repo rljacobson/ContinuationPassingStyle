@@ -35,41 +35,13 @@ pub struct Variable{
   // TODO: Use interned strings.
 }
 
+// TODO: If `variables` are bound to  `values`, just use a `HashMap<Variable, DValue>` instead of two vectors.
 pub type VariableList = Vec<Variable>;
 
 
 fn next_location(last_address: Location) -> Location {//-> Span<'static> {
   last_address + std::mem::size_of::<DValue>()
 }
-
-/* From [Appel, Chapter 1] I think?
-// TODO: If `variables` are bound to  `values`, just use a `HashMap<Variable, DValue>` instead of two vectors.
-pub fn eval(
-  variables: VariableList,
-  continuation: ContinuationExpression,
-  dvalues: DValueList,
-  store: Store
-) -> Answer {
-  Answer{}
-}
-*/
-
-/*
-The function `overflow` and `overflowr` plays in [Appel] has been inlined, because we leverage
-the existing methods in `num::CheckedMul`, `num::CheckedAdd`, etc.
-
-fn overflow(
-  evaluate_number: Box<dyn FnOnce()->Option<Integer>>,
-  values: DValueList,
-  continuation: ContinuationExpression
-) -> DValue {
-  if let Some(n) = evaluate_number() {
-    CExp(DValue::Integer(n))
-  } else{
-    raise_exception(DValue::Exception(Exception::Overflow))
-  }
-}
- */
 
 // todo: How to implement this function?
 /// Models unpredictability, a sort of Phi node.
