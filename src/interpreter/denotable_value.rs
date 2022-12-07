@@ -1,23 +1,23 @@
 /*!
 
-  A value is *denotable* if it can be held in one machine word (as a pointer into the
-  heap or as a single-precision integer/float). These values may be bound to
-  variables, passed as parameters, and stored in data structures.
-
   A [`Value`] is a primitive non-composite value, which may or may not be denotable.
   A [`DenotableValue`], or `DValue` for short, is a (possibly composite) value that
-  can be denoted, that is,
+  can be denoted. A value is *denotable* if it can be held in one machine word (as
+  a pointer into the heap or as a single-precision integer/float). These values
+  may be bound to variables, passed as parameters, and stored in data structures.
 
 */
 
 
-use std::{ops::Range};
+use std::ops::Range;
 use std::rc::Rc;
-
-use crate::interpreter::{Integer, Location, Real};
-use crate::interpreter::continuation::Continuation;
+use crate::interpreter::store::AccessPath;
 
 use super::{
+  Integer,
+  Location,
+  Real,
+  continuation::Continuation,
   arbitrarily,
   exception::Exception,
   store::Store,
@@ -49,15 +49,17 @@ const ZERO: DenotableValue = DValue::Integer(0i32);
 pub(crate) const EMPTY: DenotableValueList = vec![];
 
 
-
 #[derive(Clone, Debug, Hash)]
 pub enum DenotableValue {
   Record{
     values: DValueList, // A list of denotable values.
     idx: Location
   }, // A structure.
+
   Integer(Integer),
+
   Real(Real),
+
   /// `String`s are immutable.
   String(String),
 
@@ -68,18 +70,20 @@ pub enum DenotableValue {
   /// An `Array` holds the range of indices into the `Store` where the array values are stored.
   /// Note that the `DValue::Array` does not hold the values themselves, just the indices.
   Array(Range<Location>),
+
   /// An array of `Integers`.
   UnboxedArray(Range<Location>),
 
-  /// A `DenotableFunction` is the same thing as a `Continuation`..
+  /// A `DenotableFunction` is the same thing as a `Continuation`.
   Function(DenotableFunction),
 
   Exception(Exception)
 }
 
-/// This definition of equality models the semantics of pointer equality. The instances of `arbitrarily` correspond to
-/// variant instances that may be pointers to the same memory location (equal) or pointers to two different memory
-/// locations regardless of whether the value is the same (not equal).
+/// This definition of equality models the semantics of pointer equality. The
+/// instances of `arbitrarily` correspond to variant instances that may be
+/// pointers to the same memory location (equal) or pointers to two different
+/// memory locations regardless of whether the value is the same (not equal).
 impl PartialEq for DValue {
   fn eq(&self, other: &Self) -> bool {
     match (self, other) {
@@ -139,17 +143,9 @@ impl From<Real> for DValue {
 }
 
 
-/// An access path is a selection chain through linked `DValue::Record`s terminating at a
-/// non-`Record` `DValue`.
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
-pub enum AccessPath{
-  Offset(Location),
-  Select { offset: Location, access_path: Rc<AccessPath> }
-}
-
 /// Accesses the value of the field pointed to by an `AccessPath`. This is function `F` in [Appel]
 pub fn resolve_field(value: DValue, access_path: Rc<AccessPath>) -> DValue {
-  match (value, *access_path) {
+  match (value, access_path) {
 
     (x, AccessPath::Offset(0)) => x,
 

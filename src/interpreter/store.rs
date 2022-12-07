@@ -4,6 +4,7 @@
 
 */
 
+use std::rc::Rc;
 
 use crate::interpreter::{Integer, IntegerList, Location};
 
@@ -41,7 +42,7 @@ impl Store{
     self.values.get(idx).unwrap()
   }
 
-  // TODO: Should this return a ``?
+  // TODO: Should this return a `&DValue`?
   pub fn fetch_integer(&self, idx: Location) -> DValue {
     let n = *self.integer_values.get(idx).unwrap();
     DValue::Integer(n)
@@ -72,11 +73,18 @@ impl Store{
 
   /// Uses the `Store`'s exception handler to handle the given exception.
   pub fn raise_exception(&self, exception: Exception) -> Answer{
-    // TODO: Implement `Display` for `Exception`.
     eprintln!("Exception raised: {:?}", &exception);
 
     let DValue::Function(f) = self.values.fetch(self.exception_handler);
     *f(vec![exception.into()], self)
   }
 
+}
+
+/// An access path is a selection chain through linked `DValue::Record`s terminating at a
+/// non-`Record` `DValue`.
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+pub enum AccessPath{
+  Offset(Location),
+  Select { offset: Location, access_path: Rc<AccessPath> }
 }

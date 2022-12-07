@@ -13,79 +13,87 @@ use std::rc::Rc;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum PrimitiveOp {
-  Multiply,
-  Add,
-  Subtract,
-  Divide,
-  Tilde,
-  IEqual,
-  INEqual,
-  Less,
-  LessEqual,
-  Greater,
-  GreaterEqual,
+  Multiply,     // *
+  Add,          // +
+  Subtract,     // -
+  Divide,       // div
+  Tilde,        // ~
+  IEqual,       // ieql
+  INEqual,      // ineq
+  Less,         // <
+  LessEqual,    // <=
+  Greater,      // >
+  GreaterEqual, // >=
 
   /// usage: rangechk i j
+  ///
   /// type : `int -> int -> bool`
+  ///
   /// When two’s complement is used to represent negative numbers, and `j` is nonnegative,
   /// the test `0 ≤ i < j` can be most efficiently accomplished using an unsigned
   /// comparison operator. The `rangechk` is just “unsigned less than;” the nested
   /// if statements here just express unsigned comparison using signed operators.
-  RangeCheck,
+  RangeCheck, // rangechk
 
   /// Usage: `a!`
+  ///
   /// type : `['a] -> 'a`
+  ///
   /// Equivalent to `a[0]`.
-  Bang,
+  Bang, // !
 
   /// Usage: `a[i]`
   /// type : `['a] -> int -> 'a`
   /// Returns the value at index `i` stored in the array `a`.
-  Subscript,
+  Subscript, // subscript
 
   /// Usage: `ordof a, i`
+  ///
   /// type : `string -> int -> int`
+  ///
   /// Returns the nth byte as its ASCII code (`DValue::Integer`)
-  OrdinalOffset, // todo: What does `ordof` stand for?
+  OrdinalOf,
 
   /// Usage: `a := i`
+  ///
   /// type : array -> int -> unit
+  ///
   /// Updates the value of `a` at index `0`.
-  ColonEqual,
+  ColonEqual, // :=
 
   /// A cheaper version of assignment used when we know the value is not boxed.
-  UnboxedAssign,
-  Update,
+  UnboxedAssign,  // unboxedassign
+  Update,         // update
   /// A cheaper version of assignment used when we know the value is not boxed.
-  UnboxedUpdate,
-  Store,
-  MakeRef,
-  MakeRefUnboxed,
-  ArrayLength,
-  SLength,
-  GetHandler,
-  SetHandler,
-  Boxed,
-  FAdd,
-  FSubtract,
-  FMultiply,
-  FDivide,
-  FEqual,
-  FNEqual,
-  FGreaterEqual,
-  FGreater,
-  FLessEqual,
-  FLess,
-  RShift,
-  LShift,
-  OrBinary,
-  AndBinary,
-  XOrBinary,
-  NotBinary,
+  UnboxedUpdate,  // unboxedupdate
+  Store,          // store
+  MakeRef,        // makeref
+  MakeRefUnboxed, // makerefunboxed
+  ArrayLength,    // alength
+  StringLength,   // slength
+  GetHandler,     // gethdlr
+  SetHandler,     // sethdlr
+  Boxed,          // boxed
+  FAdd,           // fadd
+  FSubtract,      // fsub
+  FMultiply,      // fmul
+  FDivide,        // fdiv
+  FEqual,         // feql
+  FNEqual,        // fneq
+  FGreaterEqual,  // fge
+  FGreater,       // fgt
+  FLessEqual,     // fle
+  FLess,          // flt
+  RShift,         // rshift
+  LShift,         // lshift
+  OrBinary,       // orb
+  AndBinary,      // andb
+  XOrBinary,      // xorb
+  NotBinary,      // notb
 }
 
 impl PrimitiveOp{
-  pub fn eval(&self, parameters: Parameters, continuation_list: ContinuationList) -> Answer{
+  pub fn evaluate(&self, parameters: Parameters, continuation_list: ContinuationList) -> Answer{
 
     match (self, *parameters[..], &continuation_list[..]) {
       (
@@ -246,7 +254,7 @@ impl PrimitiveOp{
       },
 
       (PrimitiveOp::Bang, [a], [c]) => {
-        PrimitiveOp::Subscript.eval(vec![a, DValue::Integer(0)], vec![*c])
+        PrimitiveOp::Subscript.evaluate(vec![a, DValue::Integer(0)], vec![*c])
       },
 
       (
@@ -259,7 +267,7 @@ impl PrimitiveOp{
         // that fetches the right value when given a store, and wrap that closure into an answer.
         Answer{
           // We capture the needed parameters instead of packing and unpacking the `Answer`'s
-          // parameters member
+          // parameters member.
           f: Rc::new(move | _, store | {
             let i = store.fetch(array_range.start+n);
             c.f(vec![i], store)
@@ -308,11 +316,11 @@ impl PrimitiveOp{
         [array @ DValue::Array(_), value],
         c
       ) => {
-        PrimitiveOp::Update.eval(vec![array, ZERO, value], c.into())
+        PrimitiveOp::Update.evaluate(vec![array, ZERO, value], c.into())
       }
 
       (PrimitiveOp::UnboxedAssign, [a, v], c) => {
-        PrimitiveOp::UnboxedUpdate.eval(vec![a, ZERO, v], c.into())
+        PrimitiveOp::UnboxedUpdate.evaluate(vec![a, ZERO, v], c.into())
       },
 
       (
@@ -630,3 +638,10 @@ impl PrimitiveOp{
   }
 
 }
+
+
+
+fn next_location(last_address: Location) -> Location {//-> Span<'static> {
+  last_address + std::mem::size_of::<DValue>()
+}
+

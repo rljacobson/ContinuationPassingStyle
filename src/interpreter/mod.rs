@@ -14,12 +14,6 @@
 
 */
 
-use  continuation::{Answer, ContinuationExpression};
-use  denotable_value::{Answer, DValue, DValueList};
-use  exception::Exception;
-use  store::Store;
-use value::VariableList;
-
 pub mod denotable_value;
 pub mod store;
 pub mod exception;
@@ -27,8 +21,10 @@ pub mod primitive_op;
 pub mod continuation;
 pub mod value;
 pub mod environment;
+mod continuation_expression;
 
-#[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
+
+#[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct Variable{
   name: String
   // TODO: If `name` is the only field, define `Variable(String)` instead.
@@ -38,19 +34,13 @@ pub struct Variable{
 // TODO: If `variables` are bound to  `values`, just use a `HashMap<Variable, DValue>` instead of two vectors.
 pub type VariableList = Vec<Variable>;
 
-
-fn next_location(last_address: Location) -> Location {//-> Span<'static> {
-  last_address + std::mem::size_of::<DValue>()
-}
-
-// todo: How to implement this function?
-/// Models unpredictability, a sort of Phi node.
-fn arbitrarily<T>(lhs: T, _rhs: T) -> T {
-  lhs
-}
-
 pub type Integer = i32;
 pub type IntegerList = Vec<Integer>;
 pub type Real = f32;
 pub type Location = usize;
 
+
+/// "arbitrarily" selects one of the two provided alternatives.
+pub fn arbitrarily(a: bool, b: bool) -> bool {
+  a
+}
