@@ -1,96 +1,32 @@
-# Data Flow
+# Compiling with Continuations
 
-@startuml
-hide empty description
-top to bottom direction
+[_Compiling with Continuations_ by Andrew W. Appel](https://doi.org/10.1017/CBO9780511609619), 
+published by Cambridge University Press, 1992, is a classic text in the area
+of compiler construction. It describes the backend of the Standard ML of New Jersey 
+compiler, which uses the _continuation passing style_ (CPS) compilation 
+strategy.
 
-Enum Value {
-+Variable
-+Label
-+Integer
-+Real
-+String
-}
+![book.jpg](book.jpg)
 
-Class Variable {
-}
-
-
-Class Environment {
-bindings: Bindings
-{method} value_to_denotable_value(Value) -> DValue
-}
-
-class ContinuationExpression::PrimitiveOp {
-operation  : PrimitiveOp
-values     : ValueList
-variables  : VariableList
-expressions: Vec<CExp>
-}
-package CPS {
-
-class Store {
-next_unused_address: Location
-exception_handler: Location
-values: Vec<DenotableValue>
-integer_values: Vec<Integer>
-}
-
-class Continuation {
-    f: Rc<RawContinuation>
-}
-
-Enum DenotableValue {
-+Record
-+Integer
-+Real
-+String
-+ByteArray
-+Array
-+UnboxedArray
-+Function
-+Exception
-}
-
-class Answer{
-    f: Continuation
-    parameters: Vec<DenotableValue>
-}
-
-}
-
-Environment <--> Store
-Value <--> DenotableValue
-Variable <--> Continuation
-ContinuationExpression::PrimitiveOp <--> Answer
-
-
-@enduml
-
-
-
-Enum ContinuationExpression {
-+Record
-+Select
-+Offset
-+Apply
-+Fix
-+Switch
-+PrimativeOp
-}
-
-ContinuationExpression <--> ContinuationExpression::PrimitiveOp
-
+The implementation language used in the book is also ML. This repository is 
+an alternative implementation in Rust. Effort was made to stay as close to 
+the book as was reasonable. Because Rust is in some sense a strict 
+superset of ML, most of the data structures translated with only minor 
+syntactic changes. Some of the names have been changed for increased clarity. 
 
 # Appel/ML vs. Me/Rust
 
-## CPS Representation
+Some notes on analogous types and data structures between this code and 
+\[Appel] are collected here.
+
+## CPS Semantics Representation
 
 | Name         | ML Item                 | ML Type                                                      | Rust Item   | Rust Type                                                    |
 | ------------ | ----------------------- | ------------------------------------------------------------ | ----------- | ------------------------------------------------------------ |
-| Value        | Value                   | `datatype value = VAR of var | LABEL of var | INT of int | REAL of string | STRING of string` | Value       | `enum Value{ Variable(Variable), Label(Variable), Integer(Integer), Real(Real), String(String) }` |
+| Value        | Value                   | `datatype value = VAR of var` | `LABEL of var` | `INT of int` | `REAL of string` | `STRING of string` | `Value`       | `enum Value{ Variable(Variable), Label(Variable), Integer(Integer), Real(Real), String(String) }` |
 | Values       | -                       | -                                                            | `ValueList` | `Vec<Value>`                                                 |
 | Continuation | Continuation Expression | `CExp`                                                       | `CExp`      |                                                              |
+|              |                         |                                                              |             |                                                              |
 |              |                         |                                                              |             |                                                              |
 
 
@@ -108,4 +44,21 @@ ContinuationExpression <--> ContinuationExpression::PrimitiveOp
 | Current Exception Handler | Global variable                                      | `val handler_ref : loc`                | Member of `Store`                                            | `struct Store{ current_exception_handler: Location, ... }`   |
 |                           |                                                      |                                        |                                                              |                                                              |
 
-`ContinuationExpression` Evaluates to `Continuation` (`DenotableFunction`)  Evaluates to  Answer`.
+`ContinuationExpression` evaluates to `Continuation` (`DenotableFunction`) evaluates to  `Answer`.
+
+
+# License and Authorship
+
+Copyright (C) 2022 Robert Jacobson. This software is distributed under the MIT 
+license or the Apache license at your option. See [MIT.txt](MIT.txt) and 
+[APACHE.txt](APACHE.txt).
+
+The book [_Compiling with Continuations_ by Andrew W. Appel](https://doi.org/10.1017/CBO9780511609619) is 
+Copyright (C) 1992 Cambridge University Press. Quotations from this work are 
+included herein under the "fair use" exceptions of Section 107 of the 
+Copyright Act.
+
+[Standard ML of New Jersey](https://www.smlnj.org/) 
+is Copyright (c) 2001-2020 by The Fellowship of SML/NJ and
+Copyright (c) 1989-2001 by Lucent Technologies. No code
+from Standard ML of New Jersey was used in this project.

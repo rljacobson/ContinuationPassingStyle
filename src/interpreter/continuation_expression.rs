@@ -1,15 +1,4 @@
 /*
-# Appel/ML vs. Me/Rust
-
-Testing *whether*  **markdown** `does` what  I expect.
-
- * one
- * another
- * last
-
-1. first
-2. second
-3. third
 
 */
 
@@ -17,29 +6,30 @@ use std::rc::Rc;
 
 use crate::{
   interpreter::{
-    continuation::{Answer, Continuation, ContinuationList, RawContinuation},
-    denotable_value::{DenotableFunction, DValue, resolve_field, DValueList},
-    environment::Environment,
-    exception::Exception,
     Location,
-    primitive_op::PrimitiveOp,
-    store::AccessPath,
-    value::{Value, ValueList},
     Variable,
     VariableList,
+    cps::{
+      continuation::{Answer, Continuation, RawContinuation},
+      denotable_value::{DenotableFunction, DValue, DValueList, resolve_field},
+      store::AccessPath
+    },
+    environment::Environment,
+    exception::Exception,
+    primitive_op::PrimitiveOp,
+    value::{Value, ValueList}
   }
 };
 
 
-pub type CExp = Box<ContinuationExpression>;
-
+#[derive(Clone, Eq, PartialEq)]
 struct FunctionDefinition {
   name             : Variable,
   formal_parameters: VariableList,
-  body             : DenotableFunction
+  body             : ContinuationExpression
 }
 
-#[derive(Clone, PartialEq, Eq, Hash, Debug)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum ContinuationExpression {
   /// In the expression `Record(vl, w, e)` the scope of `w` is just the expression `e`.
   Record {
@@ -122,7 +112,7 @@ impl ContinuationExpression {
         // ultimately points to.
         let d_values: DValueList = values.iter().map(
             | (value, access_path) | {
-              let d_value = environment.value_to_denotable_value(*value);
+              let d_value = environment.value_to_denotable_value(value);
               resolve_field(d_value, access_path.clone())
             }
           ).collect();
@@ -132,7 +122,7 @@ impl ContinuationExpression {
             idx: 0
           };
 
-        let new_environment = environment.bind(variable, record);
+        let new_environment = environment.bind(variable.clone(), record);
 
         expression.evaluate(new_environment)
 
@@ -144,11 +134,11 @@ impl ContinuationExpression {
         variable  : w_variable,
         expression: e_cexp
       } => {
-        if let DValue::Record {values, idx} = environment.value_to_denotable_value(v_value) {
-          let new_environment = environment.bind(w_variable, *values[i+idx]);
+        if let DValue::Record {values, idx} = environment.value_to_denotable_value(&v_value) {
+          let new_environment = environment.bind(w_variable.clone(), values[i+idx].clone());
           e_cexp.evaluate(new_environment)
         } else {
-          DValue::Exception(Exception::InvalidAccess)
+          Exception::InvalidAccess.as_answer()
         }
       }
 
@@ -158,21 +148,23 @@ impl ContinuationExpression {
         variable  : w_variable,
         expression: e_cexp
       } => {
-        if let DValue::Record {values, idx} = environment.value_to_denotable_value(v_value) {
+        if let DValue::Record {values, idx} = environment.value_to_denotable_value(&v_value) {
           let bind_value = DValue::Record{values, idx:i+idx};
-          let new_environment = environment.bind(w_variable, bind_value);
+          let new_environment = environment.bind(w_variable.clone(), bind_value);
           e_cexp.evaluate(new_environment)
         } else {
-          DValue::Exception(Exception::InvalidAccess)
+          Exception::InvalidAccess.as_answer()
         }
       }
 
       ContinuationExpression::Apply {
-        function : f_value,
+        function : f_value, // A label/variable bound to a function.
         arguments: l_values
       } => {
-        if let DValue::Function(denotable_function) = environment.value_to_denotable_value(f_value){
-          let parameters = l_values.iter().map(environment.value_to_denotable_value ).collect();
+        if let DValue::Function(denotable_function) = environment.value_to_denotable_value(&f_value) {
+          let parameters = l_values.iter()
+                                   .map(|x|environment.value_to_denotable_value(x))
+                                   .collect();
           denotable_function(parameters) // : Answer
         } else {
           Exception::Undefined.as_answer()
@@ -181,7 +173,7 @@ impl ContinuationExpression {
 
       // False positive for "Binding `fl_list` never used."
       ContinuationExpression::Fix {
-        function_defs: mut fl_list,
+        function_defs: fl_list,
         expression   : e_cexp
       } => {
 
@@ -206,39 +198,44 @@ impl ContinuationExpression {
         fn h(
              r1_environment: &Environment,
              function_def  : &FunctionDefinition,
-             fl_list       : &mut Vec<FunctionDefinition>
+             fl_list       : &Vec<FunctionDefinition>
         ) -> DValue {
           let bound_r1_environment = g(r1_environment, fl_list);
-          let raw_continuation: RawContinuation =
-            | actual_parameters, store | {
-              let new_environment =
-                  bound_r1_environment.bindn(&function_def.formal_parameters, &actual_parameters);
-              function_def.body.evaluate(new_environment)
-            };
-          DValue::Function(Continuation{f: Rc::new(raw_continuation)})
+          let continuation: Rc<RawContinuation> =
+            Rc::new(move
+              | actual_parameters, store | {
+                let new_environment =
+                    bound_r1_environment.bindn(&function_def.formal_parameters, actual_parameters);
+
+                (function_def.body.evaluate(new_environment))(store)
+              }
+            );
+
+          DValue::Function(DenotableFunction{f: continuation})
         }
 
         /// The function `g` takes an environment `r` as an argument and returns `r` augmented
         /// by binding all the function names (map #1 fl) to the function bodies (map (h r) fl).
         /// ~~This function captures `fl_list`.~~
-        fn g(r: &Environment, fl_list: &mut Vec<FunctionDefinition>) -> Environment {
-          let function_names = fl_list.iter().map(| triple | triple.0 ).collect();
-          let function_bodies = fl_list.iter().map(|triple| h(r, triple, fl_list))
-              .collect::<DValueList>();
+        fn g(r: &Environment, fl_list: &Vec<FunctionDefinition>) -> Environment {
+          let function_names: VariableList = fl_list.iter().map(|fd | fd.name ).collect();
+          let function_values = fl_list.iter()
+                                       .map(|fd| h(r, fd, fl_list))
+                                       .collect::<DValueList>();
           r.bindn(
-            function_names,
-            &function_bodies
+            &function_names,
+            &function_values
           )
         }
 
-        e_cexp.evaluate(g(&environment, &mut fl_list))
+        e_cexp.evaluate(g(&environment, &fl_list))
       }
 
       ContinuationExpression::Switch {
         value: value,
         arms: el_cexp_list
       } => {
-        if let DValue::Integer(i) = environment.value_to_denotable_value(value){
+        if let DValue::Integer(i) = environment.value_to_denotable_value(&value){
           el_cexp_list[i as usize].evaluate(environment)
         } else {
           Exception::IndexOutOfBounds.as_answer()
@@ -258,14 +255,15 @@ impl ContinuationExpression {
         variables  : wl,
         expressions: el
       } => {
-        let d_values = vl.iter().map(environment.value_to_denotable_value).collect();
-        let continuations = el.iter().map(| c | {
-          Continuation {
-            f: Rc::new(|parameters, store| {
-              c.evaluate(environment.bindn(&wl, &parameters))
-            })
+        let d_values = vl.iter().map(|v| environment.value_to_denotable_value(v)).collect();
+        let continuations = el.iter().map(
+          | c | {
+            Continuation {
+              f: Rc::new(|parameters, store| {
+                c.evaluate(environment.bindn(&wl, &parameters)).call_once((store,))
+              })
+            }
           }
-        }
         ).collect::<Vec<Continuation>>();
         p.evaluate(d_values, continuations)
       }

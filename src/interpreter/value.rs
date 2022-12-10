@@ -16,7 +16,7 @@ use super::{
 
 pub type ValueList = Vec<Value>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Clone, Debug)]
 pub enum Value{
   Variable(Variable),    // Can be bound to denotable value with `Environment`
   Label(Variable),       // Can be bound to denotable value with `Environment`

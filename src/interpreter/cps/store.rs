@@ -22,9 +22,9 @@ use super::{
 ///   The store (whose type is `(loc*(loc->dvalue)*(loc->int)))` has three components: the next unused location, a mapping
 ///   from locations to denotable values, and a mapping from locations to integers.
 ///
-/// Instead of using a global variable for the current exception handler as in [Appel], we keep it
+/// Instead of using a global variable for the current exception handler as in \[Appel], we keep it
 /// with the `Store`.
-#[derive(Clone, Debug, Hash)]
+#[derive(Clone)]
 pub struct Store{
   pub(crate) next_unused_address: Location,
   pub(crate) exception_handler: Location,
@@ -75,8 +75,13 @@ impl Store{
   pub fn raise_exception(&self, exception: Exception) -> Answer{
     eprintln!("Exception raised: {:?}", &exception);
 
-    let DValue::Function(f) = self.values.fetch(self.exception_handler);
-    *f(vec![exception.into()], self)
+    if let DValue::Function(continuation) = &self.values[self.exception_handler] {
+      (continuation.f).call((&vec![exception.into()], self))
+    } else {
+      // Todo: Handle exceptions raised by the interpreter rather than the program being
+      //       interpreted.
+      panic!("The exception handler pointer does not point to a function.")
+    }
   }
 
 }

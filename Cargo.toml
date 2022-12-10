@@ -15,5 +15,6 @@ publish     = false
 
 [dependencies]
 #saucepan = {path= "../../saucepan"}
-#strum = { version = "0.21", features = ["derive"] }
-ahash = "0.7.4" # A faster hash function for `HashMap`
+strum         = { version = "0.21", features = ["derive"] }
+ahash         = "0.7.4" # A faster hash function for `HashMap`
+ordered-float = "3.4.0" # A wrapper for floats that implements Ord and Hash.

@@ -14,14 +14,29 @@
 
 */
 
-pub mod denotable_value;
-pub mod store;
 pub mod exception;
 pub mod primitive_op;
-pub mod continuation;
 pub mod value;
 pub mod environment;
-mod continuation_expression;
+pub mod continuation_expression;
+pub mod cps;
+
+use std::collections::HashMap;
+use std::rc::Rc;
+
+use ordered_float::OrderedFloat;
+
+use crate::{
+  interpreter::{
+    continuation_expression::ContinuationExpression,
+    environment::Environment,
+    exception::{InternalException, raise_exception},
+    cps::{
+      continuation::Answer,
+      denotable_value::DenotableValueList
+    }
+  }
+};
 
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -31,16 +46,38 @@ pub struct Variable{
   // TODO: Use interned strings.
 }
 
-// TODO: If `variables` are bound to  `values`, just use a `HashMap<Variable, DValue>` instead of two vectors.
 pub type VariableList = Vec<Variable>;
 
-pub type Integer = i32;
+pub type Integer     = i64;
 pub type IntegerList = Vec<Integer>;
-pub type Real = f32;
-pub type Location = usize;
-
+pub type Real        = OrderedFloat<f32>;
+pub type Location    = usize;
 
 /// "arbitrarily" selects one of the two provided alternatives.
+// Todo: It's not clear what this function should do.
 pub fn arbitrarily(a: bool, b: bool) -> bool {
   a
+}
+
+
+/// The entry point of the interpreter, `evaluate` takes a `VariableList`, a
+/// `ContinuationExpression`, and a list of values to be bound to the corresponding variables in
+/// the`VariableList`, and returns the denotation of the expression in the resulting environment.
+pub fn evaluate(
+  mut variables: VariableList,
+  mut values   : DenotableValueList,
+  expression   : ContinuationExpression,
+) -> Answer
+{
+  if variables.len() != values.len() {
+    raise_exception(InternalException::WrongNumberOfParameters);
+    panic!();
+  }
+
+  let bindings = variables.drain(..)
+                          .zip(values.drain(..))
+                          .collect::<HashMap<_, _>>();
+  let environment = Environment::with_bindings(bindings);
+
+  expression.evaluate(environment)
 }

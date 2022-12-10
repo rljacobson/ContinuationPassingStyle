@@ -181,11 +181,11 @@ fun evalprim (CPS.+ : CPS.primop,
     | evalprim (CPS.flt, REAL i, REAL j], [t, f]) =
         if i<j then t[] else f[]
     | evalprim (CPS.fle, REAL i, REAL j], [t, f]) =
-        if j<i then f[] else t[]
+        if j<=i then f[] else t[]
     | evalprim (CPS.fgt, REAL i, REAL j], [t, f]) =
-        if j<i then t[] else f[]
+        if j>i then t[] else f[]
     | evalprim (CPS.fge, REAL i, REAL j], [t, f]) =
-        if i<j then f[] else t[]
+        if i>=j then f[] else t[]
 
 type env = CPS.var -> dvalue
 

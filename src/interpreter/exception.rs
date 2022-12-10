@@ -4,26 +4,28 @@
 
 */
 
-use strum::Display;
-
-use super::denotable_value::DenotableValue;
-use crate::interpreter::denotable_value::DValue;
-use crate::interpreter::continuation::Answer;
 use std::rc::Rc;
 
-// TODO: This is ugly. Find a better way.
-const OVERFLOW_EXCEPTION: DenotableValue = DenotableValue::Integer(0);
-const DIVIDE_BY_ZERO_EXCEPTION: DenotableValue = DenotableValue::Integer(0);
+use strum::Display;
+
+use crate::{
+  interpreter::{
+    cps::{
+      continuation::Answer,
+      denotable_value::{DenotableValue, DValue}
+    }
+  }
+};
 
 #[derive(Copy, Clone, Display, Debug, Hash)]
 pub enum Exception {
   Overflow,
   DivideByZero,
-  InvalidAccess,      // Attempt to access a field of a non-`Record`
-  Undefined,          // Exception for interpreter/host code, not the interpreted program.
+  InvalidAccess,    // Attempt to access a field of a non-`Record`
   // Bind,
   // Match,
-  IndexOutOfBounds,   // Called `Nth` in [Appel], an invalid subscript.
+  Undefined,
+  IndexOutOfBounds, // Called `Nth` in [Appel], an invalid subscript.
 }
 
 impl Exception {
@@ -47,3 +49,17 @@ impl Exception {
   }
 }
 
+
+#[derive(Copy, Clone, Display, Debug, Hash)]
+pub enum InternalException {
+  Undefined,
+  WrongNumberOfParameters
+}
+
+pub fn raise_exception(exception: InternalException) {
+  eprint!("Internal exception raised:: {}", exception);
+}
+
+pub fn raise_exception_msg(exception: InternalException, msg: &str) {
+  eprint!("Internal exception raised:: {}: {}", exception, msg);
+}

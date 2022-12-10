@@ -1,15 +1,21 @@
 #![allow(dead_code)]
 
-use std::sync::mpsc::TryRecvError::Empty;
 
-use crate::interpreter::{Integer, Location, next_location};
-
-use super::{
-  continuation::{Answer, ContinuationList, Parameters},
-  denotable_value::{DValue, EMPTY},
-  exception::Exception,
-};
 use std::rc::Rc;
+
+use ordered_float::OrderedFloat;
+
+use crate::{
+  interpreter::{
+    cps::{
+      denotable_value::{DValue, EMPTY, ZERO},
+      continuation::{Answer, ContinuationList, Parameters}
+    },
+    exception::{Exception, InternalException},
+    Integer,
+    Location
+  }
+};
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum PrimitiveOp {
@@ -84,27 +90,27 @@ pub enum PrimitiveOp {
   FGreater,       // fgt
   FLessEqual,     // fle
   FLess,          // flt
-  RShift,         // rshift
-  LShift,         // lshift
-  OrBinary,       // orb
-  AndBinary,      // andb
-  XOrBinary,      // xorb
-  NotBinary,      // notb
+  // RShift,         // rshift
+  // LShift,         // lshift
+  // OrBinary,       // orb
+  // AndBinary,      // andb
+  // XOrBinary,      // xorb
+  // NotBinary,      // notb
 }
 
 impl PrimitiveOp{
   pub fn evaluate(&self, parameters: Parameters, continuation_list: ContinuationList) -> Answer{
 
-    match (self, *parameters[..], &continuation_list[..]) {
+    match (self, parameters.as_slice(), continuation_list.as_slice()) {
       (
         PrimitiveOp::Multiply,
         [DValue::Integer(i), DValue::Integer(j)],
         [c]
       ) =>  {
-              if Some(k) = i.checked_mul(j){
+              if let Some(k) = i.checked_mul(*j){
                 c(vec![DValue::Integer(k)])
               } else {
-                Exception::Overlow.as_answer()
+                Exception::Overflow.as_answer()
               }
             },
 
@@ -112,10 +118,10 @@ impl PrimitiveOp{
         [DValue::Integer(i), DValue::Integer(j)],
         [c]
       ) =>  {
-              if Some(k) = i.checked_add(j){
+              if let Some(k) = i.checked_add(*j){
                 c(vec![DValue::Integer(k)])
               } else {
-                Exception::Overlow.as_answer()
+                Exception::Overflow.as_answer()
               }
             },
 
@@ -123,10 +129,10 @@ impl PrimitiveOp{
         [DValue::Integer(i), DValue::Integer(j)],
         [c]
       ) =>  {
-              if Some(k) = i.checked_sub(j){
+              if let Some(k) = i.checked_sub(*j){
                 c(vec![DValue::Integer(k)])
               } else {
-                Exception::Overlow.as_answer()
+                Exception::Overflow.as_answer()
               }
             },
 
@@ -144,7 +150,7 @@ impl PrimitiveOp{
         [DValue::Integer(i), DValue::Integer(j)],
         [c]
       ) =>  {
-        if Some(k) = i.checked_div(j){
+        if let Some(k) = i.checked_div(*j){
           c(vec![DValue::Integer(k)])
         } else {
           Exception::Overflow.as_answer()
@@ -157,19 +163,19 @@ impl PrimitiveOp{
         [DValue::Integer(i)],
         [c]
       ) =>  {
-              if Some(k) = 0i32.checked_sub(i){
+              if let Some(k) = 0i64.checked_sub(*i){
                 c(vec![DValue::Integer(k)])
               } else {
-                Exception::Overlow.as_answer()
+                Exception::Overflow.as_answer()
               }
             },
 
 
       (PrimitiveOp::IEqual, [a, b], [t, f]) => {
         if a==b {
-          t(EMPTY)
+          (*t)(EMPTY)
         } else {
-          f(EMPTY)
+          (*f)(EMPTY)
         }
       },
 
@@ -234,8 +240,8 @@ impl PrimitiveOp{
         [DValue::Integer(i), DValue::Integer(j)],
         [t, f]
       ) => {
-        if j<0 {
-          if i<0 {
+        if *j<0 {
+          if *i<0 {
             if i<j {
               t(EMPTY)
             } else {
@@ -244,7 +250,7 @@ impl PrimitiveOp{
           } else {
             t(EMPTY)
           }
-        }  else if i < 0 {
+        }  else if *i < 0 {
           f(EMPTY)
         } else if i<j {
           t(EMPTY)
@@ -254,7 +260,7 @@ impl PrimitiveOp{
       },
 
       (PrimitiveOp::Bang, [a], [c]) => {
-        PrimitiveOp::Subscript.evaluate(vec![a, DValue::Integer(0)], vec![*c])
+        PrimitiveOp::Subscript.evaluate(vec![a.clone(), DValue::Integer(0)], vec![c.clone()])
       },
 
       (
@@ -262,6 +268,9 @@ impl PrimitiveOp{
         [DValue::Array(array_range), DValue::Integer(n)],
         [c]
       ) => {
+        let continuation = c.clone();
+        let range = array_range.clone();
+        let m  = *n;
         // The `Subscript` operation requires that we fetch a value from the store. However, we
         // do not have access to a `Store` at this point. The solution is to construct a closure
         // that fetches the right value when given a store, and wrap that closure into an answer.
@@ -269,8 +278,8 @@ impl PrimitiveOp{
           // We capture the needed parameters instead of packing and unpacking the `Answer`'s
           // parameters member.
           f: Rc::new(move | _, store | {
-            let i = store.fetch(array_range.start+n);
-            c.f(vec![i], store)
+            let i = store.fetch(range.start + m as usize);
+            (continuation.f)(&vec![i.clone()], store)
           }),
           parameters: EMPTY
         }
@@ -281,6 +290,9 @@ impl PrimitiveOp{
         [DValue::UnboxedArray(array_range), DValue::Integer(n)],
         [c]
       ) => {
+        let continuation = c.clone();
+        let range = array_range.clone();
+        let m  = *n;
         // The `Subscript` operation requires that we fetch a value from the store. However, we
         // do not have access to a `Store` at this point. The solution is to construct a closure
         // that fetches the right value when given a store, and wrap that closure into an answer.
@@ -288,8 +300,8 @@ impl PrimitiveOp{
           // We capture the needed parameters instead of packing and unpacking the `Answer`'s
           // parameters member.
           f: Rc::new(move | _, store | {
-            let i = store.fetch_integer(array_range.start + n);
-            c.f(vec![i], store)
+            let i = store.fetch_integer(range.start + m as usize);
+            (continuation.f)(&vec![i], store)
           }),
           parameters: EMPTY
         }
@@ -300,15 +312,16 @@ impl PrimitiveOp{
         [DValue::Record { values, idx: i }, DValue::Integer(j)],
         [c]
       ) => {
-        c(vec![values[i+j]])
+
+        c(vec![values[*i + *j as usize].clone()])
       },
 
       (
-        PrimitiveOp::OrdinalOffset,
+        PrimitiveOp::OrdinalOf,
         [DValue::String(a), DValue::Integer(i)],
         [c]
       ) => {
-        c( DValue::Integer(a.as_bytes()[i as usize] as i32) )
+        c( vec![DValue::Integer(a.as_bytes()[*i as usize] as Integer)] )
       },
 
       (
@@ -316,11 +329,11 @@ impl PrimitiveOp{
         [array @ DValue::Array(_), value],
         c
       ) => {
-        PrimitiveOp::Update.evaluate(vec![array, ZERO, value], c.into())
+        PrimitiveOp::Update.evaluate(vec![array.clone(), ZERO.clone(), value.clone()], c.into())
       }
 
       (PrimitiveOp::UnboxedAssign, [a, v], c) => {
-        PrimitiveOp::UnboxedUpdate.evaluate(vec![a, ZERO, v], c.into())
+        PrimitiveOp::UnboxedUpdate.evaluate(vec![a.clone(), ZERO.clone(), v.clone()], c.into())
       },
 
       (
@@ -328,16 +341,18 @@ impl PrimitiveOp{
         [DValue::Array(array_range), DValue::Integer(n), value],
         [c]
       ) => {
+        let continuation = c.clone();
+        let range = array_range.clone();
+        let m  = *n;
+        let v = value.clone();
         // The `Update` operation requires that we update a value in the store. However, we
         // do not have access to a `Store` at this point. The solution is to construct a closure
         // that updates the right value when given a store, and wrap that closure into an answer.
-
         Answer{
           // We capture the needed parameters instead of packing and unpacking.
           f: Rc::new(move | _, store | {
-
-            let new_store = store.update(array_range.start as Location + n, value);
-            c.f(EMPTY, new_store)
+            let new_store = store.update(range.start as Location + m as usize, v.clone());
+            (continuation.f)(&EMPTY, &new_store)
           }),
           parameters: EMPTY
         }
@@ -346,20 +361,23 @@ impl PrimitiveOp{
 
       (
         PrimitiveOp::Update,
-        [DValue::UnboxedArray(array_range), DValue::Integer(n), value @ DValue::Integer(_)],
+        [DValue::UnboxedArray(array_range), DValue::Integer(n), DValue::Integer(value)],
         [c]
       ) => {
+        let continuation = c.clone();
+        let range = array_range.clone();
+        let m  = *n;
+        let v = value.clone();
         // The `Update` operation requires that we update a value in the store. However, we
         // do not have access to a `Store` at this point. The solution is to construct a closure
         // that updates the right value when given a store, and wrap that closure into an answer.
-
         Answer{
           // We capture the needed parameters instead of packing and unpacking.
           f: Rc::new(move | _, store | {
 
             let new_store =
-                store.update_integer(array_range.start as Location + n, value);
-            c.f(EMPTY, new_store)
+                store.update_integer(range.start as Location + m as usize, v.clone());
+            (continuation.f)(&EMPTY, &new_store)
           }),
           parameters: EMPTY
         }
@@ -374,10 +392,14 @@ impl PrimitiveOp{
         ],
         [c]
       ) => {
+        let continuation = c.clone();
+        let range = array_range.clone();
+        let m  = *n;
+        let v = value.clone();
         Answer{
           f: Rc::new(move | _, store | {
-            let new_store = store.update(array_range.start + n, value);
-            c.f(EMPTY, new_store)
+            let new_store = store.update(range.start + m as Location, v.clone());
+            (continuation.f)(&EMPTY, &new_store)
           }),
           parameters: EMPTY
         }
@@ -388,15 +410,19 @@ impl PrimitiveOp{
         [
           DValue::UnboxedArray(array_range),
           DValue::Integer(n),
-          value @ DValue::Integer(_)
+          DValue::Integer(value)
         ],
         [c]
       ) => {
+        let continuation = c.clone();
+        let range = array_range.clone();
+        let m  = *n;
+        let v = value.clone();
         Answer{
           f: Rc::new(move | _, store | {
             let new_store =
-                store.update_integer(array_range.start + n as Location, value);
-            c.f(EMPTY, new_store)
+                store.update_integer(range.start + m as Location, v.clone());
+            (continuation.f)(&EMPTY, &new_store)
           }),
           parameters: EMPTY
         }
@@ -407,14 +433,19 @@ impl PrimitiveOp{
         [DValue::ByteArray(array_range), DValue::Integer(i), DValue::Integer(v)],
         [c]
       ) => {
-        if v < 0 || v >= 256 {
-          Exception::Undefined.as_answer()
+        if *v < 0 || *v >= 256 {
+          // The value of `v` must fit into a byte.
+          Exception::Overflow.as_answer()
         } else {
+          let continuation = c.clone();
+          let range = array_range.clone();
+          let j = *i;
+          let u = *v;
           Answer{
             f: Rc::new(move | _, store | {
               let new_store
-                  = store.update_integer(array_range.start + i, v);
-              c.f(EMPTY, new_store)
+                  = store.update_integer(range.start + j as Location, u);
+              (continuation.f)(&EMPTY, &new_store)
             }),
             parameters: EMPTY
           }
@@ -422,61 +453,73 @@ impl PrimitiveOp{
       },
 
       (PrimitiveOp::MakeRef, [value], [c]) => {
+        let v = value.clone();
+        let continuation = c.clone();
         Answer{
           f: Rc::new(move | _, store | {
             let last_address = store.next_unused_address;
             let mut new_store =
-                store.update(*last_address, value);
+                store.update(last_address, v.clone());
             new_store.next_unused_address = next_location(last_address);
-            c.f([DValue::Array(l..l+1)], new_store)
+            // Todo: Should this be `DValue::Array(last_address..last_address+1)]` or
+            //       `DValue::Array(new_store.next_unused_address..new_store.next_unused_address+1)]`?
+            (continuation.f)(&vec![DValue::Array(last_address..last_address+1)], &new_store)
           }),
           parameters: EMPTY
         }
       }
 
       (PrimitiveOp::MakeRefUnboxed, [DValue::Integer(value)], [c]) => {
+        let v = *value;
+        let continuation = c.clone();
         Answer{
           f: Rc::new(move | _, store | {
             let last_address = store.next_unused_address;
             let mut new_store =
-                store.update_integer(*last_address, value);
+                store.update_integer(last_address, v);
             new_store.next_unused_address = next_location(last_address);
-            c.f([DValue::Array(l..l+1)], new_store)
+            // Todo: Should this be `DValue::Array(last_address..last_address+1)]` or
+            //       `DValue::Array(new_store.next_unused_address..new_store.next_unused_address+1)]`?
+            (continuation.f)(&vec![DValue::Array(last_address..last_address+1)], &new_store)
           }),
           parameters: EMPTY
         }
       },
 
       (PrimitiveOp::ArrayLength, [DValue::Array(array_range)], [c]) => {
-        c([DValue::Integer(array_range.len() as i32)])
+        c(vec![DValue::Integer(array_range.len() as Integer)])
       },
 
       (PrimitiveOp::ArrayLength, [DValue::UnboxedArray(array_range)], [c]) => {
-        c([DValue::Integer(array_range.len() as i32)])
+        c(vec![DValue::Integer(array_range.len() as Integer)])
       },
 
-      (PrimitiveOp::SLength, [DValue::ByteArray(array_range)], [c]) => {
-        c([DValue::Integer(array_range.len() as i32)])
+      // The StringLength operator is used for `ByteArray`s, as they are considered mutable strings.
+      (PrimitiveOp::StringLength, [DValue::ByteArray(array_range)], [c]) => {
+        c(vec![DValue::Integer(array_range.len() as Integer)])
       },
 
-      (PrimitiveOp::SLength, [DValue::String(String)], [c]) => {
-        c([DValue::Integer(String.len() as i32)])
+      (PrimitiveOp::StringLength, [DValue::String(String)], [c]) => {
+        c(vec![DValue::Integer(String.len() as Integer)])
       },
 
       (PrimitiveOp::GetHandler, [], [c]) => {
+        let continuation = c.clone();
         Answer{
           f: Rc::new(move | _, store | {
-            c.f(vec![store.fetch(store.exception_handler)], store)
+            (continuation.f)(&vec![store.fetch(store.exception_handler).clone()], store)
           }),
           parameters: EMPTY
         }
       },
 
       (PrimitiveOp::SetHandler, [new_handler], [c]) => {
+        let handler = new_handler.clone();
+        let continuation = c.clone();
         Answer{
           f: Rc::new(move | _, store | {
-            let new_store = store.update(store.exception_handler, new_handler);
-            c.f(EMPTY, new_store)
+            let new_store = store.update(store.exception_handler, handler.clone());
+            (continuation.f)(&EMPTY, &new_store)
           }),
           parameters: EMPTY
         }
@@ -515,32 +558,41 @@ impl PrimitiveOp{
       },
 
       (PrimitiveOp::FAdd, [DValue::Real(a), DValue::Real(b)], [c]) => {
-        if Some(k) = a.checked_add(b){
-          c(vec![DValue::Real(k)])
-        } else {
-          Exception::Overlow.as_answer()
-        }
+        c(vec![DValue::Real(OrderedFloat(a.0 + b.0))])
+
+        // No overflow detection for reals.
+        // if let Some(k) = a.0.checked_add(b){
+        //   c(vec![DValue::Real(k)])
+        // } else {
+        //   Exception::Overflow.as_answer()
+        // }
       },
 
       (PrimitiveOp::FSubtract, [DValue::Real(a), DValue::Real(b)], [c]) => {
-        if Some(k) = a.checked_sub(b){
-          c(vec![DValue::Real(k)])
-        } else {
-          Exception::Overlow.as_answer()
-        }
+        c(vec![DValue::Real(OrderedFloat(a.0 - b.0))])
+
+        // No overflow detection for reals.
+        // if let Some(k) = a.0.checked_sub(b){
+        //   c(vec![DValue::Real(k)])
+        // } else {
+        //   Exception::Overflow.as_answer()
+        // }
       },
 
       (PrimitiveOp::FMultiply, [DValue::Real(a), DValue::Real(b)], [c]) => {
-        if Some(k) = a.checked_mul(b){
-          c(vec![DValue::Real(k)])
-        } else {
-          Exception::Overlow.as_answer()
-        }
+        c(vec![DValue::Real(OrderedFloat(a.0 * b.0))])
+
+        // No overflow detection for reals.
+        // if let Some(k) = a.0.checked_mul(b){
+        //   c(vec![DValue::Real(k)])
+        // } else {
+        //   Exception::Overflow.as_answer()
+        // }
       },
 
       (
         PrimitiveOp::FDivide,
-        [DValue::Real(_a), DValue::Real(0.0)],
+        [DValue::Real(_a), DValue::Real(OrderedFloat(0.0))],
         _
       ) =>  {
         Exception::DivideByZero.as_answer()
@@ -551,11 +603,14 @@ impl PrimitiveOp{
         [DValue::Real(a), DValue::Real(b)],
         [c]
       ) =>  {
-        if Some(k) = a.checked_div(b){
-          c(vec![DValue::Real(k)])
-        } else {
-          Exception::Overflow.as_answer()
-        }
+        c(vec![DValue::Real(OrderedFloat(a.0 / b.0))])
+
+        // No overflow detection for reals.
+        // if let Some(k) = a.0.checked_div(b){
+        //   c(vec![DValue::Real(k)])
+        // } else {
+        //   Exception::Overflow.as_answer()
+        // }
       },
 
 
@@ -607,6 +662,11 @@ impl PrimitiveOp{
         }
       },
 
+      _ => {
+        unreachable!()
+      }
+
+      // Todo: \[Appel] doesn't implement these operations?
       /*
       (PrimitiveOp::RShift, [DValue::Real(a), DValue::Real(b)], [c]) => {
 

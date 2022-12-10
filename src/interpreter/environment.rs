@@ -8,11 +8,9 @@ use std::collections::HashMap;
 use std::ops::{Deref, Index};
 use std::rc::Rc;
 
-use super::{
-  denotable_value::{
-    DValue,
-    DValueList
-  },
+use crate::interpreter::cps::denotable_value::{DValue, DValueList};
+
+use crate::interpreter::{
   Variable,
   VariableList,
   value::Value,
@@ -20,23 +18,31 @@ use super::{
 
 pub type Bindings = HashMap<Variable, DValue>;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone)]
 pub struct Environment {
-  bindings: Rc<Bindings>
+  pub(crate) bindings: Rc<Bindings>
 }
 
 
 impl Environment {
 
   pub fn new() -> Self {
-    Self::default()
+    Environment{
+      bindings: Rc::new(HashMap::new())
+    }
+  }
+
+  pub fn with_bindings(bindings: Bindings) -> Environment {
+    Environment{
+      bindings: Rc::new(bindings)
+    }
   }
 
   /// Creates an environment in which `variable` is bound to `value`, consuming `self`.
   pub fn bind(&self, variable: Variable, value: DValue) -> Environment{
     // Avoid making a new environment if `variable` is already bound to `value`.
     if let Some(found) = self.get(&variable){
-      if found == value {
+      if *found == value {
         return self.clone();
       }
     }
@@ -45,15 +51,17 @@ impl Environment {
     // `self.bindings`. Since there is no way to know if self will still be needed afterwards, we
     // cannot steal the bindings vector from this environment.
     let mut new_environment: Environment = self.deep_copy();
-    new_environment.bindings.insert(variable, value);
+    unsafe {
+      Rc::get_mut_unchecked(&mut new_environment.bindings).insert(variable, value);
+    }
     new_environment
   }
 
   /// Creates a copy of the environment in which the given list of variables and values are bound.
   /// Unlike bind, does not optimize the case that the variables are already bound.
-  pub fn bindn(&self, variables: &VariableList, values: &DValueList) -> Environment {
+  pub fn bindn(&self, mut variables: &VariableList, mut values: &DValueList) -> Environment {
     let mut new_environment = self.deep_copy();
-    new_environment.extend(variables.iter().zip(values));
+    new_environment.extend(variables.iter().cloned().zip(values.iter().cloned()));
     new_environment
   }
 
@@ -70,8 +78,9 @@ impl Environment {
     }
 
     let mut new_environment = self.deep_copy();
-
-    new_environment.bindings.remove(&variable);
+    unsafe {
+      Rc::get_mut_unchecked(&mut new_environment.bindings).remove(&variable);
+    }
     new_environment
   }
 
@@ -81,30 +90,38 @@ impl Environment {
 
   /// This method is trivial for number variants and strings. `Value::Variable`s and
   /// `Value::Label`s must be looked up in the environment. This is function `V` in [Appel].
-  pub fn value_to_denotable_value(&self, value: Value) -> DValue {
+  pub fn value_to_denotable_value(&self, value: &Value) -> DValue {
     match value{
 
       | Value::Variable(v)
       | Value::Label(v) => {
         // Todo: What if `v` is not bound?
-        *self[v]
+        self[v].clone()
       },
 
-      Value::Integer(i) => DValue::Integer(i),
+      Value::Integer(i) => DValue::Integer(*i),
 
-      Value::Real(r) => DValue::Real(r),
+      Value::Real(r) => DValue::Real(*r),
 
-      Value::String(s) => DValue::String(s),
+      Value::String(s) => DValue::String(s.clone()),
 
     }
   }
+
+  pub fn extend<T>(&mut self, iterator: T)
+    where T: IntoIterator<Item = (Variable, DValue)>
+  {
+    let mut new_bindings = Rc::make_mut(&mut self.bindings);
+    new_bindings.extend(iterator);
+  }
+
 }
 
-impl Index<Variable> for Environment {
+impl Index<&Variable> for Environment {
   type Output = DValue;
 
-  fn index(&self, index: Variable) -> &Self::Output {
-    self.bindings[index]
+  fn index(&self, index: &Variable) -> &Self::Output {
+    &self.bindings[index]
   }
 }
 
