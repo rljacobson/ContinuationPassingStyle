@@ -17,7 +17,7 @@ use crate::{
   }
 };
 
-#[derive(Copy, Clone, Display, Debug, Hash)]
+#[derive(Copy, Clone, Eq, PartialEq, Display, Debug, Hash)]
 pub enum Exception {
   Overflow,
   DivideByZero,

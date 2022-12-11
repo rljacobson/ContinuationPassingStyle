@@ -25,18 +25,6 @@ use crate::{
   }
 };
 
-use super::{
-  environment::Environment,
-  exception::Exception,
-  primitive_op::PrimitiveOp,
-  value::{
-    Value,
-    ValueList,
-  },
-  Variable,
-  VariableList
-};
-
 // Defined below
 pub type Parameters = DenotableValueList; // todo: Reference to `DValueList`, or `Rc`, or...?
 pub type RawContinuation = dyn Fn(&Parameters, &Store) -> Answer;

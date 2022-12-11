@@ -30,20 +30,20 @@
 
 use std::ops::Range;
 use std::rc::Rc;
+
 use crate::{
   interpreter::{
     exception::{Exception, InternalException, raise_exception},
     Integer,
     Location,
     Real,
-    arbitrarily,
-    value::ValueList
+    arbitrarily
   }
 };
 
 use super::{
   continuation::Continuation,
-  store::{Store, AccessPath},
+  store::{AccessPath},
 };
 
 // use saucepan::{Span, Source, Sources, ByteIndex, ByteOffset};

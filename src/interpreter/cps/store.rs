@@ -7,15 +7,14 @@
 use std::rc::Rc;
 
 use crate::interpreter::{Integer, IntegerList, Location};
+use crate::interpreter::exception::Exception;
 
 use super::{
   continuation::Answer,
   denotable_value::{
-    DenotableValue,
     DenotableValueList,
     DValue
   },
-  exception::Exception
 };
 
 /// From [Appel, p.25]:

@@ -11,11 +11,12 @@ use crate::{
       denotable_value::{DValue, EMPTY, ZERO},
       continuation::{Answer, ContinuationList, Parameters}
     },
-    exception::{Exception, InternalException},
+    exception::{Exception},
     Integer,
     Location
   }
 };
+use crate::interpreter::cps::continuation::Continuation;
 
 #[derive(Copy, Clone, PartialEq, Eq, Hash, Debug)]
 pub enum PrimitiveOp {
@@ -99,14 +100,17 @@ pub enum PrimitiveOp {
 }
 
 impl PrimitiveOp{
-  pub fn evaluate(&self, parameters: Parameters, continuation_list: ContinuationList) -> Answer{
+  pub fn evaluate(self, mut parameters: Parameters, mut continuation_list: ContinuationList) -> Answer{
+    let continuation_count = continuation_list.len();
 
-    match (self, parameters.as_slice(), continuation_list.as_slice()) {
+    // Have to work around inability to destructure ContinuationList.
+    match (self, parameters.as_mut_slice(), continuation_count) {
       (
         PrimitiveOp::Multiply,
         [DValue::Integer(i), DValue::Integer(j)],
-        [c]
+        1
       ) =>  {
+              let c = continuation_list.pop().unwrap();
               if let Some(k) = i.checked_mul(*j){
                 c(vec![DValue::Integer(k)])
               } else {
@@ -114,10 +118,12 @@ impl PrimitiveOp{
               }
             },
 
-      (PrimitiveOp::Add,
+      (
+        PrimitiveOp::Add,
         [DValue::Integer(i), DValue::Integer(j)],
-        [c]
+        1
       ) =>  {
+        let c = continuation_list.pop().unwrap();
               if let Some(k) = i.checked_add(*j){
                 c(vec![DValue::Integer(k)])
               } else {
@@ -125,10 +131,12 @@ impl PrimitiveOp{
               }
             },
 
-      (PrimitiveOp::Subtract,
+      (
+        PrimitiveOp::Subtract,
         [DValue::Integer(i), DValue::Integer(j)],
-        [c]
+        1
       ) =>  {
+              let c = continuation_list.pop().unwrap();
               if let Some(k) = i.checked_sub(*j){
                 c(vec![DValue::Integer(k)])
               } else {
@@ -148,8 +156,9 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Divide,
         [DValue::Integer(i), DValue::Integer(j)],
-        [c]
+        1
       ) =>  {
+        let c = continuation_list.pop().unwrap();
         if let Some(k) = i.checked_div(*j){
           c(vec![DValue::Integer(k)])
         } else {
@@ -161,8 +170,9 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Tilde,
         [DValue::Integer(i)],
-        [c]
+        1
       ) =>  {
+              let c = continuation_list.pop().unwrap();
               if let Some(k) = 0i64.checked_sub(*i){
                 c(vec![DValue::Integer(k)])
               } else {
@@ -171,15 +181,19 @@ impl PrimitiveOp{
             },
 
 
-      (PrimitiveOp::IEqual, [a, b], [t, f]) => {
+      (PrimitiveOp::IEqual, [a, b], 2) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if a==b {
-          (*t)(EMPTY)
+          t(EMPTY)
         } else {
-          (*f)(EMPTY)
+          f(EMPTY)
         }
       },
 
-      (PrimitiveOp::INEqual, [a, b], [t, f]) => {
+      (PrimitiveOp::INEqual, [a, b], 2) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if a==b {
           f(EMPTY)
         } else {
@@ -190,8 +204,10 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Less,
         [DValue::Integer(i), DValue::Integer(j)],
-        [t, f]
+        2
       ) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if i<j {
           t(EMPTY)
         } else {
@@ -202,8 +218,10 @@ impl PrimitiveOp{
       (
         PrimitiveOp::LessEqual,
         [DValue::Integer(i), DValue::Integer(j)],
-        [t, f]
+        2
       ) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if i<=j {
           t(EMPTY)
         } else {
@@ -214,8 +232,10 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Greater,
         [DValue::Integer(i), DValue::Integer(j)],
-        [t, f]
+        2
       ) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if i>j {
           t(EMPTY)
         } else {
@@ -226,8 +246,10 @@ impl PrimitiveOp{
       (
         PrimitiveOp::GreaterEqual,
         [DValue::Integer(i), DValue::Integer(j)],
-        [t, f]
+        2
       ) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if i>=j {
           t(EMPTY)
         } else {
@@ -238,8 +260,10 @@ impl PrimitiveOp{
       (
         PrimitiveOp::RangeCheck,
         [DValue::Integer(i), DValue::Integer(j)],
-        [t, f]
+        2
       ) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if *j<0 {
           if *i<0 {
             if i<j {
@@ -259,16 +283,16 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::Bang, [a], [c]) => {
-        PrimitiveOp::Subscript.evaluate(vec![a.clone(), DValue::Integer(0)], vec![c.clone()])
+      (PrimitiveOp::Bang, [a], 1) => {
+        PrimitiveOp::Subscript.evaluate(vec![a.clone(), DValue::Integer(0)], continuation_list)
       },
 
       (
         PrimitiveOp::Subscript,
         [DValue::Array(array_range), DValue::Integer(n)],
-        [c]
+        1
       ) => {
-        let continuation = c.clone();
+        let continuation: Continuation = continuation_list.pop().unwrap();
         let range = array_range.clone();
         let m  = *n;
         // The `Subscript` operation requires that we fetch a value from the store. However, we
@@ -288,9 +312,9 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Subscript,
         [DValue::UnboxedArray(array_range), DValue::Integer(n)],
-        [c]
+        1
       ) => {
-        let continuation = c.clone();
+        let continuation: Continuation = continuation_list.pop().unwrap();
         let range = array_range.clone();
         let m  = *n;
         // The `Subscript` operation requires that we fetch a value from the store. However, we
@@ -310,38 +334,39 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Subscript,
         [DValue::Record { values, idx: i }, DValue::Integer(j)],
-        [c]
+        1
       ) => {
-
+        let c: Continuation = continuation_list.pop().unwrap();
         c(vec![values[*i + *j as usize].clone()])
       },
 
       (
         PrimitiveOp::OrdinalOf,
         [DValue::String(a), DValue::Integer(i)],
-        [c]
+        1
       ) => {
+        let c: Continuation = continuation_list.pop().unwrap();
         c( vec![DValue::Integer(a.as_bytes()[*i as usize] as Integer)] )
       },
 
       (
         PrimitiveOp::ColonEqual,
         [array @ DValue::Array(_), value],
-        c
+        1
       ) => {
-        PrimitiveOp::Update.evaluate(vec![array.clone(), ZERO.clone(), value.clone()], c.into())
+        PrimitiveOp::Update.evaluate(vec![array.clone(), ZERO.clone(), value.clone()], continuation_list)
       }
 
-      (PrimitiveOp::UnboxedAssign, [a, v], c) => {
-        PrimitiveOp::UnboxedUpdate.evaluate(vec![a.clone(), ZERO.clone(), v.clone()], c.into())
+      (PrimitiveOp::UnboxedAssign, [a, v], 1) => {
+        PrimitiveOp::UnboxedUpdate.evaluate(vec![a.clone(), ZERO.clone(), v.clone()], continuation_list)
       },
 
       (
         PrimitiveOp::Update,
         [DValue::Array(array_range), DValue::Integer(n), value],
-        [c]
+        1
       ) => {
-        let continuation = c.clone();
+        let continuation: Continuation = continuation_list.pop().unwrap();
         let range = array_range.clone();
         let m  = *n;
         let v = value.clone();
@@ -362,9 +387,9 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Update,
         [DValue::UnboxedArray(array_range), DValue::Integer(n), DValue::Integer(value)],
-        [c]
+        1
       ) => {
-        let continuation = c.clone();
+        let continuation = continuation_list.pop().unwrap();
         let range = array_range.clone();
         let m  = *n;
         let v = value.clone();
@@ -390,9 +415,9 @@ impl PrimitiveOp{
           DValue::Integer(n),
           value @ DValue::Integer(_)
         ],
-        [c]
+        1
       ) => {
-        let continuation = c.clone();
+        let continuation = continuation_list.pop().unwrap();
         let range = array_range.clone();
         let m  = *n;
         let v = value.clone();
@@ -412,9 +437,9 @@ impl PrimitiveOp{
           DValue::Integer(n),
           DValue::Integer(value)
         ],
-        [c]
+        1
       ) => {
-        let continuation = c.clone();
+        let continuation = continuation_list.pop().unwrap();
         let range = array_range.clone();
         let m  = *n;
         let v = value.clone();
@@ -431,13 +456,13 @@ impl PrimitiveOp{
       (
         PrimitiveOp::Store,
         [DValue::ByteArray(array_range), DValue::Integer(i), DValue::Integer(v)],
-        [c]
+        1
       ) => {
         if *v < 0 || *v >= 256 {
           // The value of `v` must fit into a byte.
           Exception::Overflow.as_answer()
         } else {
-          let continuation = c.clone();
+          let continuation = continuation_list.pop().unwrap();
           let range = array_range.clone();
           let j = *i;
           let u = *v;
@@ -452,9 +477,9 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::MakeRef, [value], [c]) => {
+      (PrimitiveOp::MakeRef, [value], 1) => {
         let v = value.clone();
-        let continuation = c.clone();
+        let continuation = continuation_list.pop().unwrap();
         Answer{
           f: Rc::new(move | _, store | {
             let last_address = store.next_unused_address;
@@ -469,9 +494,9 @@ impl PrimitiveOp{
         }
       }
 
-      (PrimitiveOp::MakeRefUnboxed, [DValue::Integer(value)], [c]) => {
+      (PrimitiveOp::MakeRefUnboxed, [DValue::Integer(value)], 1) => {
         let v = *value;
-        let continuation = c.clone();
+        let continuation = continuation_list.pop().unwrap();
         Answer{
           f: Rc::new(move | _, store | {
             let last_address = store.next_unused_address;
@@ -486,25 +511,29 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::ArrayLength, [DValue::Array(array_range)], [c]) => {
+      (PrimitiveOp::ArrayLength, [DValue::Array(array_range)], 1) => {
+        let c = continuation_list.pop().unwrap();
         c(vec![DValue::Integer(array_range.len() as Integer)])
       },
 
-      (PrimitiveOp::ArrayLength, [DValue::UnboxedArray(array_range)], [c]) => {
+      (PrimitiveOp::ArrayLength, [DValue::UnboxedArray(array_range)], 1) => {
+        let c = continuation_list.pop().unwrap();
         c(vec![DValue::Integer(array_range.len() as Integer)])
       },
 
       // The StringLength operator is used for `ByteArray`s, as they are considered mutable strings.
-      (PrimitiveOp::StringLength, [DValue::ByteArray(array_range)], [c]) => {
+      (PrimitiveOp::StringLength, [DValue::ByteArray(array_range)], 1) => {
+        let c = continuation_list.pop().unwrap();
         c(vec![DValue::Integer(array_range.len() as Integer)])
       },
 
-      (PrimitiveOp::StringLength, [DValue::String(String)], [c]) => {
-        c(vec![DValue::Integer(String.len() as Integer)])
+      (PrimitiveOp::StringLength, [DValue::String(s)], 1) => {
+        let c = continuation_list.pop().unwrap();
+        c(vec![DValue::Integer(s.len() as Integer)])
       },
 
-      (PrimitiveOp::GetHandler, [], [c]) => {
-        let continuation = c.clone();
+      (PrimitiveOp::GetHandler, [], 1) => {
+        let continuation = continuation_list.pop().unwrap();
         Answer{
           f: Rc::new(move | _, store | {
             (continuation.f)(&vec![store.fetch(store.exception_handler).clone()], store)
@@ -513,9 +542,9 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::SetHandler, [new_handler], [c]) => {
+      (PrimitiveOp::SetHandler, [new_handler], 1) => {
+        let continuation = continuation_list.pop().unwrap();
         let handler = new_handler.clone();
-        let continuation = c.clone();
         Answer{
           f: Rc::new(move | _, store | {
             let new_store = store.update(store.exception_handler, handler.clone());
@@ -525,39 +554,48 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::Boxed, [DValue::Integer(_)], [_t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::Integer(_)], 2) => {
+        let f = continuation_list.pop().unwrap();
         f(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::Real(_)], [_t, f]) => {
+      (PrimitiveOp::Boxed, [DValue::Real(_)], 2) => {
+        let f = continuation_list.pop().unwrap();
         f(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::Record { .. }], [t, _f]) => {
+      (PrimitiveOp::Boxed, [DValue::Record { .. }], 2) => {
+        let t = continuation_list.remove(0);
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::String(_)], [t, _f]) => {
+      (PrimitiveOp::Boxed, [DValue::String(_)], 2) => {
+        let t = continuation_list.remove(0);
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::Array(_)], [t, _f]) => {
+      (PrimitiveOp::Boxed, [DValue::Array(_)], 2) => {
+        let t = continuation_list.remove(0);
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::UnboxedArray(_)], [t, _f]) => {
+      (PrimitiveOp::Boxed, [DValue::UnboxedArray(_)], 2) => {
+        let t = continuation_list.remove(0);
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::ByteArray(_)], [t, _f]) => {
+      (PrimitiveOp::Boxed, [DValue::ByteArray(_)], 2) => {
+        let t = continuation_list.remove(0);
         t(EMPTY)
       },
 
-      (PrimitiveOp::Boxed, [DValue::Function(_)], [t, _f]) => {
+      (PrimitiveOp::Boxed, [DValue::Function(_)], 2) => {
+        let t = continuation_list.remove(0);
         t(EMPTY)
       },
 
-      (PrimitiveOp::FAdd, [DValue::Real(a), DValue::Real(b)], [c]) => {
+      (PrimitiveOp::FAdd, [DValue::Real(a), DValue::Real(b)], 1) => {
+        let c = continuation_list.pop().unwrap();
         c(vec![DValue::Real(OrderedFloat(a.0 + b.0))])
 
         // No overflow detection for reals.
@@ -568,7 +606,8 @@ impl PrimitiveOp{
         // }
       },
 
-      (PrimitiveOp::FSubtract, [DValue::Real(a), DValue::Real(b)], [c]) => {
+      (PrimitiveOp::FSubtract, [DValue::Real(a), DValue::Real(b)], 1) => {
+        let c = continuation_list.pop().unwrap();
         c(vec![DValue::Real(OrderedFloat(a.0 - b.0))])
 
         // No overflow detection for reals.
@@ -579,7 +618,8 @@ impl PrimitiveOp{
         // }
       },
 
-      (PrimitiveOp::FMultiply, [DValue::Real(a), DValue::Real(b)], [c]) => {
+      (PrimitiveOp::FMultiply, [DValue::Real(a), DValue::Real(b)], 1) => {
+        let c = continuation_list.pop().unwrap();
         c(vec![DValue::Real(OrderedFloat(a.0 * b.0))])
 
         // No overflow detection for reals.
@@ -590,6 +630,7 @@ impl PrimitiveOp{
         // }
       },
 
+      #[allow(illegal_floating_point_literal_pattern)]
       (
         PrimitiveOp::FDivide,
         [DValue::Real(_a), DValue::Real(OrderedFloat(0.0))],
@@ -601,8 +642,9 @@ impl PrimitiveOp{
       (
         PrimitiveOp::FDivide,
         [DValue::Real(a), DValue::Real(b)],
-        [c]
-      ) =>  {
+        1
+      ) => {
+        let c = continuation_list.pop().unwrap();
         c(vec![DValue::Real(OrderedFloat(a.0 / b.0))])
 
         // No overflow detection for reals.
@@ -614,7 +656,9 @@ impl PrimitiveOp{
       },
 
 
-      (PrimitiveOp::FEqual, [DValue::Real(a), DValue::Real(b)], [t, f]) => {
+      (PrimitiveOp::FEqual, [DValue::Real(a), DValue::Real(b)], 2) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if a == b {
           t(EMPTY)
         } else {
@@ -622,7 +666,9 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::FNEqual, [DValue::Real(a), DValue::Real(b)], [t, f]) => {
+      (PrimitiveOp::FNEqual, [DValue::Real(a), DValue::Real(b)], 2) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if a != b {
           t(EMPTY)
         } else {
@@ -630,7 +676,9 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::FGreaterEqual, [DValue::Real(a), DValue::Real(b)], [t, f]) => {
+      (PrimitiveOp::FGreaterEqual, [DValue::Real(a), DValue::Real(b)], 2) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if a >= b {
           t(EMPTY)
         } else {
@@ -638,7 +686,9 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::FGreater, [DValue::Real(a), DValue::Real(b)], [t, f]) => {
+      (PrimitiveOp::FGreater, [DValue::Real(a), DValue::Real(b)], 2) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if a > b {
           t(EMPTY)
         } else {
@@ -646,7 +696,9 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::FLessEqual, [DValue::Real(a), DValue::Real(b)], [t, f]) => {
+      (PrimitiveOp::FLessEqual, [DValue::Real(a), DValue::Real(b)], 2) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if a <= b {
           t(EMPTY)
         } else {
@@ -654,7 +706,9 @@ impl PrimitiveOp{
         }
       },
 
-      (PrimitiveOp::FLess, [DValue::Real(a), DValue::Real(b)], [t, f]) => {
+      (PrimitiveOp::FLess, [DValue::Real(a), DValue::Real(b)], 2) => {
+        let f = continuation_list.pop().unwrap();
+        let t = continuation_list.pop().unwrap();
         if a < b {
           t(EMPTY)
         } else {

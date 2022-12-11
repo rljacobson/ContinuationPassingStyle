@@ -20,10 +20,17 @@ use crate::{
     value::{Value, ValueList}
   }
 };
+use crate::interpreter::cps::continuation::ContinuationList;
+use crate::interpreter::environment::RcEnvironment;
 
+
+pub type CExp = Box<ContinuationExpression>;
+pub type FunctionDefinitionList = Vec<FunctionDefinition>;
+pub type RcFunctionDefinition = Rc<FunctionDefinition>;
+pub type RcFunctionDefinitionList = Rc<Vec<RcFunctionDefinition>>;
 
 #[derive(Clone, Eq, PartialEq)]
-struct FunctionDefinition {
+pub struct FunctionDefinition {
   name             : Variable,
   formal_parameters: VariableList,
   body             : ContinuationExpression
@@ -82,7 +89,7 @@ pub enum ContinuationExpression {
   of `vij` is just `Bi`.
   */
   Fix {
-    function_defs: Vec<FunctionDefinition>,
+    function_defs: RcFunctionDefinitionList,
     expression   : CExp
   },
 
@@ -176,7 +183,6 @@ impl ContinuationExpression {
         function_defs: fl_list,
         expression   : e_cexp
       } => {
-
         /**
           The  functions  `h` and `g` defined below are mutually recursive. They cannot
           be defined as closures, because they would both have to capture each other,
@@ -196,31 +202,32 @@ impl ContinuationExpression {
           ~~This function captures `fl_list` indirectly through `g` (defined below).~~
         */
         fn h(
-             r1_environment: &Environment,
-             function_def  : &FunctionDefinition,
-             fl_list       : &Vec<FunctionDefinition>
-        ) -> DValue {
-          let bound_r1_environment = g(r1_environment, fl_list);
+             r1_environment: RcEnvironment,
+             function_def  : RcFunctionDefinition,
+             fl_list       : RcFunctionDefinitionList
+        ) -> DValue
+        {
           let continuation: Rc<RawContinuation> =
             Rc::new(move
               | actual_parameters, store | {
+                let bound_r1_environment = g(r1_environment.clone(), fl_list.clone());
                 let new_environment =
                     bound_r1_environment.bindn(&function_def.formal_parameters, actual_parameters);
 
-                (function_def.body.evaluate(new_environment))(store)
+                (function_def.body.clone().evaluate(new_environment))(store)
               }
             );
 
           DValue::Function(DenotableFunction{f: continuation})
         }
-
         /// The function `g` takes an environment `r` as an argument and returns `r` augmented
         /// by binding all the function names (map #1 fl) to the function bodies (map (h r) fl).
         /// ~~This function captures `fl_list`.~~
-        fn g(r: &Environment, fl_list: &Vec<FunctionDefinition>) -> Environment {
-          let function_names: VariableList = fl_list.iter().map(|fd | fd.name ).collect();
+        fn g(r: RcEnvironment, fl_list: RcFunctionDefinitionList) -> Environment {
+          let function_names: VariableList = fl_list.iter().map(|fd | fd.name.clone() ).collect();
+
           let function_values = fl_list.iter()
-                                       .map(|fd| h(r, fd, fl_list))
+                                       .map(|fd| h(r.clone(), fd.clone(), fl_list.clone()))
                                        .collect::<DValueList>();
           r.bindn(
             &function_names,
@@ -228,15 +235,17 @@ impl ContinuationExpression {
           )
         }
 
-        e_cexp.evaluate(g(&environment, &fl_list))
+
+
+        e_cexp.evaluate(g(Rc::new(environment), fl_list))
       }
 
       ContinuationExpression::Switch {
-        value: value,
+        value,
         arms: el_cexp_list
       } => {
         if let DValue::Integer(i) = environment.value_to_denotable_value(&value){
-          el_cexp_list[i as usize].evaluate(environment)
+          el_cexp_list[i as usize].clone().evaluate(environment)
         } else {
           Exception::IndexOutOfBounds.as_answer()
         }
@@ -255,16 +264,23 @@ impl ContinuationExpression {
         variables  : wl,
         expressions: el
       } => {
-        let d_values = vl.iter().map(|v| environment.value_to_denotable_value(v)).collect();
-        let continuations = el.iter().map(
-          | c | {
+        let d_values = vl.iter().map(|v| (&environment).value_to_denotable_value(v)).collect();
+        let mut continuations: ContinuationList = Vec::new();
+        let rc_environment = Rc::new(environment);
+        let rc_wl = Rc::new(wl);
+        for c in el.into_iter() {
+          // let ce: ContinuationExpression = *c;
+          let environment = rc_environment.clone();
+          let wl = rc_wl.clone();
+          continuations.push(
             Continuation {
-              f: Rc::new(|parameters, store| {
-                c.evaluate(environment.bindn(&wl, &parameters)).call_once((store,))
+              f: Rc::new(move |parameters, store| {
+                c.clone().evaluate(environment.bindn(&wl, &parameters)).call_once((store,))
               })
             }
-          }
-        ).collect::<Vec<Continuation>>();
+          )
+        }
+
         p.evaluate(d_values, continuations)
       }
 

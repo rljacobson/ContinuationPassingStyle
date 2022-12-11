@@ -22,7 +22,7 @@ pub mod continuation_expression;
 pub mod cps;
 
 use std::collections::HashMap;
-use std::rc::Rc;
+
 
 use ordered_float::OrderedFloat;
 
@@ -55,7 +55,7 @@ pub type Location    = usize;
 
 /// "arbitrarily" selects one of the two provided alternatives.
 // Todo: It's not clear what this function should do.
-pub fn arbitrarily(a: bool, b: bool) -> bool {
+pub fn arbitrarily(a: bool, _b: bool) -> bool {
   a
 }
 

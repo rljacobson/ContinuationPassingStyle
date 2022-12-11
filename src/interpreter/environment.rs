@@ -17,6 +17,7 @@ use crate::interpreter::{
 };
 
 pub type Bindings = HashMap<Variable, DValue>;
+pub type RcEnvironment = Rc<Environment>;
 
 #[derive(Clone)]
 pub struct Environment {
@@ -59,7 +60,7 @@ impl Environment {
 
   /// Creates a copy of the environment in which the given list of variables and values are bound.
   /// Unlike bind, does not optimize the case that the variables are already bound.
-  pub fn bindn(&self, mut variables: &VariableList, mut values: &DValueList) -> Environment {
+  pub fn bindn(&self, variables: &VariableList, values: &DValueList) -> Environment {
     let mut new_environment = self.deep_copy();
     new_environment.extend(variables.iter().cloned().zip(values.iter().cloned()));
     new_environment
@@ -111,7 +112,7 @@ impl Environment {
   pub fn extend<T>(&mut self, iterator: T)
     where T: IntoIterator<Item = (Variable, DValue)>
   {
-    let mut new_bindings = Rc::make_mut(&mut self.bindings);
+    let new_bindings = Rc::make_mut(&mut self.bindings);
     new_bindings.extend(iterator);
   }
 
